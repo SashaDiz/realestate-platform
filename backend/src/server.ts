@@ -34,21 +34,17 @@ app.use('/api/', limiter);
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true); // Allow non-browser requests
-    if (process.env.NODE_ENV === 'production') {
-      const allowed = [
-        'http://localhost:3000',
-        'https://your-frontend-domain.com',
-        'http://90.156.225.18',
-        'https://90.156.225.18',
-        'http://90.156.225.18:3000' // ← добавлено для CORS
-      ];
-      if (allowed.includes(origin)) return callback(null, true);
-      return callback(new Error('Not allowed by CORS'));
-    } else {
-      // Allow any localhost port in development
-      if (/^http:\/\/localhost:\d+$/.test(origin)) return callback(null, true);
-      return callback(new Error('Not allowed by CORS'));
-    }
+    const allowed = [
+      'http://localhost:3000',
+      'https://your-frontend-domain.com',
+      'http://90.156.225.18',
+      'https://90.156.225.18',
+      'http://90.156.225.18:3000'
+    ];
+    // Allow any localhost port
+    if (/^http:\/\/localhost:\d+$/.test(origin)) return callback(null, true);
+    if (allowed.includes(origin)) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
