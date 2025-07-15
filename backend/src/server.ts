@@ -7,6 +7,8 @@ import dotenv from 'dotenv';
 import connectDB from './config/database';
 import propertyRoutes from './routes/properties';
 import authRoutes from './routes/auth';
+import https from 'https';
+import fs from 'fs';
 
 // Load environment variables
 dotenv.config();
@@ -89,8 +91,13 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 });
 
 // Start server
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
+const sslOptions = {
+  key: fs.readFileSync('ssl/key.pem'),
+  cert: fs.readFileSync('ssl/cert.pem'),
+};
+
+https.createServer(sslOptions, app).listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 HTTPS Server running on https://0.0.0.0:${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 
