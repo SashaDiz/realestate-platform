@@ -28,10 +28,10 @@ services:
     environment:
       NODE_ENV: production
       PORT: 5001
-      MONGODB_URI: mongodb://admin:password123@mongodb:27017/real-estate-directory?authSource=admin
-      JWT_SECRET: your-super-secret-jwt-key-production-change-this
+      MONGODB_URI: mongodb+srv://elkiwebdesign:0mrazzWaXrloYGdZ@cluster0.g0enka0.mongodb.net/realestate?retryWrites=true&w=majority
+      JWT_SECRET: 1q2w3e4r!
       ADMIN_USERNAME: admin
-      ADMIN_PASSWORD: password
+      ADMIN_PASSWORD: Q1a23e4!
     ports:
       - "5001:5001"
     depends_on:

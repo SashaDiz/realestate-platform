@@ -35,7 +35,12 @@ app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true); // Allow non-browser requests
     if (process.env.NODE_ENV === 'production') {
-      const allowed = ['http://localhost:3000', 'https://your-frontend-domain.com'];
+      const allowed = [
+        'http://localhost:3000',
+        'https://your-frontend-domain.com',
+        'http://90.156.225.18',
+        'https://90.156.225.18'
+      ];
       if (allowed.includes(origin)) return callback(null, true);
       return callback(new Error('Not allowed by CORS'));
     } else {
