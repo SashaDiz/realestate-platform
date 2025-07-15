@@ -16,7 +16,10 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
       return;
     }
 
-    const jwtSecret = process.env.JWT_SECRET || 'fallback-secret';
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      throw new Error('JWT_SECRET is not defined in environment variables');
+    }
     const decoded = jwt.verify(token, jwtSecret) as { adminId: string };
 
     const admin = await Admin.findById(decoded.adminId);
@@ -34,7 +37,10 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
 };
 
 export const generateToken = (adminId: string): string => {
-  const jwtSecret = process.env.JWT_SECRET || 'fallback-secret';
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    throw new Error('JWT_SECRET is not defined in environment variables');
+  }
   return jwt.sign({ adminId }, jwtSecret, { expiresIn: '7d' });
 };
 

@@ -7,8 +7,8 @@ services:
     container_name: real-estate-mongodb
     restart: unless-stopped
     environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: password123
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
       MONGO_INITDB_DATABASE: real-estate-directory
     ports:
       - "27017:27017"
@@ -25,13 +25,11 @@ services:
       dockerfile: Dockerfile.backend
     container_name: real-estate-backend
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       NODE_ENV: production
       PORT: 5001
-      MONGODB_URI: mongodb+srv://elkiwebdesign:0mrazzWaXrloYGdZ@cluster0.g0enka0.mongodb.net/realestate?retryWrites=true&w=majority
-      JWT_SECRET: 1q2w3e4r!
-      ADMIN_USERNAME: admin
-      ADMIN_PASSWORD: Q1a23e4!
     ports:
       - "5001:5001"
     depends_on:
@@ -41,7 +39,7 @@ services:
     networks:
       - real-estate-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5001/api/health"]
+      test: ["CMD", "curl", "-f", "http://90.156.225.18:5001/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -56,7 +54,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: http://localhost:5001/api
+      NEXT_PUBLIC_API_URL: http://90.156.225.18:5001/api
       NEXT_PUBLIC_SITE_NAME: PropertyHub
       NEXT_PUBLIC_SITE_DESCRIPTION: Каталог недвижимости для инвестиций
     ports:

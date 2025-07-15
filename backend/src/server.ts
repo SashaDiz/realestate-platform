@@ -39,7 +39,8 @@ app.use(cors({
         'http://localhost:3000',
         'https://your-frontend-domain.com',
         'http://90.156.225.18',
-        'https://90.156.225.18'
+        'https://90.156.225.18',
+        'http://90.156.225.18:3000' // ← добавлено для CORS
       ];
       if (allowed.includes(origin)) return callback(null, true);
       return callback(new Error('Not allowed by CORS'));

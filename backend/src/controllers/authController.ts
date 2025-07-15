@@ -18,8 +18,13 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
     // If no admin exists, create default admin
     if (!admin) {
-      const defaultUsername = process.env.ADMIN_USERNAME || 'admin';
-      const defaultPassword = process.env.ADMIN_PASSWORD || 'password';
+      const defaultUsername = process.env.ADMIN_USERNAME;
+      const defaultPassword = process.env.ADMIN_PASSWORD;
+
+      if (!defaultUsername || !defaultPassword) {
+        res.status(500).json({ message: 'Admin credentials are not set in environment variables' });
+        return;
+      }
 
       if (username.toLowerCase() === defaultUsername.toLowerCase()) {
         admin = new Admin({

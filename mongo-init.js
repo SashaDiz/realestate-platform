@@ -15,13 +15,7 @@ db.properties.createIndex({ "isFeatured": 1 });
 db.properties.createIndex({ "createdAt": -1 });
 db.properties.createIndex({ "coordinates": "2dsphere" });
 
-// Create admin user
-db.admins.insertOne({
-  username: 'admin',
-  password: '$2b$10$rOzJqKZqKZqKZqKZqKZqKOzJqKZqKZqKZqKZqKZqKZqKZqKZqKZqK', // bcrypt hash of 'password'
-  createdAt: new Date(),
-  isActive: true
-});
+// Админ-пользователь должен создаваться через API или seed-скрипт, используя переменные окружения для безопасности.
 
 // Insert sample properties
 db.properties.insertMany([

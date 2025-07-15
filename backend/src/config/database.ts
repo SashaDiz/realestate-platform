@@ -1,6 +1,10 @@
 import mongoose from 'mongoose';
 
-const MONGODB_URI = 'mongodb+srv://elkiwebdesign:0mrazzWaXrloYGdZ@cluster0.g0enka0.mongodb.net/realestate?retryWrites=true&w=majority';
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (!MONGODB_URI) {
+  throw new Error('MONGODB_URI is not defined in environment variables');
+}
 
 const connectDB = async (): Promise<void> => {
   try {
