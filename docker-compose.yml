@@ -21,8 +21,8 @@ services:
   # Backend API
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: Dockerfile.backend
     container_name: real-estate-backend
     restart: unless-stopped
     environment:
@@ -50,8 +50,8 @@ services:
   # Frontend Application
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: Dockerfile.frontend
     container_name: real-estate-frontend
     restart: unless-stopped
     environment:
