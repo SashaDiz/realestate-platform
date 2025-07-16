@@ -15,8 +15,6 @@ services:
     volumes:
       - mongodb_data:/data/db
       - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
-    networks:
-      - real-estate-network
 
   # Backend API
   backend:
@@ -37,8 +35,6 @@ services:
       - mongodb
     volumes:
       - ./backend/ssl:/app/ssl
-    networks:
-      - real-estate-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://backend:5001/api/health"]
       interval: 30s
@@ -63,8 +59,6 @@ services:
     #   - "3000:3000"
     depends_on:
       - backend
-    networks:
-      - real-estate-network
 
   # Nginx Reverse Proxy (Production)
   nginx:
@@ -80,14 +74,8 @@ services:
     depends_on:
       - frontend
       - backend
-    networks:
-      - real-estate-network
 
 volumes:
   mongodb_data:
     driver: local
-
-networks:
-  real-estate-network:
-    driver: bridge
 
