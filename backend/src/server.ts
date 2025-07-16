@@ -54,6 +54,9 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'Cookie']
 }));
 
+// ОБЯЗАТЕЛЬНО: ДО маршрутов и после `app.use(cors(...))`
+app.options('*', cors());
+
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
