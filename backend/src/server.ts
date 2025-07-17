@@ -34,24 +34,12 @@ app.use('/api/', limiter);
 
 // CORS configuration
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin) return callback(null, true); // Allow non-browser requests
-    const allowed = [
-      'http://90.156.225.18:8080',
-      'http://90.156.225.18:3000',
-      'http://90.156.225.18:8080/'
-    ];
-    // Allow any localhost port
-    if (/^http:\/\/localhost:\d+$/.test(origin)) return callback(null, true);
-    if (allowed.includes(origin)) return callback(null, true);
-    return callback(new Error('Not allowed by CORS'));
-  },
+  origin: 'http://90.156.225.18:8080',
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie']
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// ОБЯЗАТЕЛЬНО: ДО маршрутов и после `app.use(cors(...))`
 app.options('*', cors());
 
 // Body parsing middleware
