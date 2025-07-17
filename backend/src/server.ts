@@ -37,12 +37,7 @@ app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true); // Allow non-browser requests
     const allowed = [
-      'http://localhost:3000',
-      'https://your-frontend-domain.com',
-      'http://90.156.225.18',
-      'https://90.156.225.18',
-      'http://90.156.225.18:3000',
-      'http://90.156.225.18:8080'
+      'http://90.156.225.18'
     ];
     // Allow any localhost port
     if (/^http:\/\/localhost:\d+$/.test(origin)) return callback(null, true);
