@@ -38,7 +38,8 @@ app.use(cors({
     if (!origin) return callback(null, true); // Allow non-browser requests
     const allowed = [
       'http://90.156.225.18:8080',
-      'http://90.156.225.18:3000'
+      'http://90.156.225.18:3000',
+      'http://90.156.225.18:8080/'
     ];
     // Allow any localhost port
     if (/^http:\/\/localhost:\d+$/.test(origin)) return callback(null, true);
