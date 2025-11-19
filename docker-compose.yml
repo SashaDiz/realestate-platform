@@ -58,7 +58,9 @@ services:
       - real-estate-network
 
   nginx:
-    image: nginx:alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
     container_name: real-estate-nginx
     restart: unless-stopped
     ports:
