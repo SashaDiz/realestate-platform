@@ -11,9 +11,6 @@ services:
       MYSQL_PASSWORD: ${DB_PASSWORD:-realestate_password}
     ports:
       - "${DB_PORT:-3306}:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ./src/lib/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
       - real-estate-network
     healthcheck:
@@ -66,8 +63,6 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - frontend
     networks:
@@ -76,6 +71,3 @@ services:
 networks:
   real-estate-network:
     driver: bridge
-
-volumes:
-  mysql_data:
