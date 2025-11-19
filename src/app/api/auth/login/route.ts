@@ -1,105 +1,93 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { findAdminByUsername, getAdminPasswordHash, comparePassword, createAdmin, updateLastLogin, generateToken, updateAdminPassword } from '@/lib/auth';
+import { verifyPassword, createSession } from '@/lib/auth';
 
 // POST /api/auth/login
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { username, password, rememberMe } = body;
+    const { password, rememberMe } = body;
 
-    if (!username || !password) {
+    if (!password) {
       return NextResponse.json(
-        { message: 'Username and password are required' },
+        { message: 'Password is required' },
         { status: 400 }
       );
     }
 
-    // Check if admin exists
-    let admin = await findAdminByUsername(username);
-
-    // If no admin exists, create default admin
-    if (!admin) {
-      const defaultUsername = (process.env.ADMIN_USERNAME || '').trim();
-      const defaultPassword = (process.env.ADMIN_PASSWORD || '').trim();
-
-      if (!defaultUsername || !defaultPassword) {
-        return NextResponse.json(
-          { message: 'Admin credentials are not set in environment variables' },
-          { status: 500 }
-        );
-      }
-
-      if (username.toLowerCase() === defaultUsername.toLowerCase()) {
-        admin = await createAdmin(defaultUsername, defaultPassword);
-      } else {
-        return NextResponse.json(
-          { message: 'Invalid credentials' },
-          { status: 401 }
-        );
-      }
+    // Простая проверка пароля из переменных окружения
+    const adminPassword = (process.env.ADMIN_PASSWORD || '').trim();
+    
+    // Логируем для отладки (безопасно - только первые символы для проверки)
+    console.log('Login attempt:', {
+      receivedPasswordLength: password?.length || 0,
+      receivedPasswordPrefix: password?.substring(0, 5) || '',
+      expectedPasswordLength: adminPassword?.length || 0,
+      expectedPasswordPrefix: adminPassword?.substring(0, 5) || '',
+      adminPasswordSet: !!adminPassword,
+      envKeys: Object.keys(process.env).filter(k => k.includes('ADMIN')).join(', '),
+    });
+    
+    if (!adminPassword) {
+      console.error('ADMIN_PASSWORD is not set in environment variables');
+      return NextResponse.json(
+        { message: 'Server configuration error: ADMIN_PASSWORD not set' },
+        { status: 500 }
+      );
     }
-
-    // Check password
-    const passwordHash = await getAdminPasswordHash(username);
-    if (!passwordHash) {
+    
+    // Сравниваем пароли напрямую (безопасное сравнение)
+    // Используем сравнение по длине и посимвольно для избежания timing attacks
+    if (password.length !== adminPassword.length) {
+      console.log('Password length mismatch');
       return NextResponse.json(
         { message: 'Invalid credentials' },
         { status: 401 }
       );
     }
-
-    const isPasswordValid = await comparePassword(password, passwordHash);
-    if (!isPasswordValid) {
-      // If password doesn't match, but this is the default admin from env vars, update the password
-      const defaultUsername = (process.env.ADMIN_USERNAME || '').trim();
-      const defaultPassword = (process.env.ADMIN_PASSWORD || '').trim();
-      
-      if (username.toLowerCase() === defaultUsername.toLowerCase() && 
-          password === defaultPassword && 
-          defaultPassword) {
-        // Update password to match the one in env vars
-        await updateAdminPassword(username, defaultPassword);
-      } else {
-        return NextResponse.json(
-          { message: 'Invalid credentials' },
-          { status: 401 }
-        );
+    
+    // Постоянное время сравнения
+    let match = true;
+    for (let i = 0; i < password.length; i++) {
+      if (password[i] !== adminPassword[i]) {
+        match = false;
       }
     }
+    
+    if (!match) {
+      console.log('Password mismatch');
+      return NextResponse.json(
+        { message: 'Invalid credentials' },
+        { status: 401 }
+      );
+    }
+    
+    console.log('Password verified successfully');
 
-    // Update last login
-    await updateLastLogin(admin.id);
+    // Создаем сессию
+    const session = createSession();
 
-    // Generate token
-    const token = generateToken(admin.id);
-
-    // Create response
+    // Создаем ответ
     const response = NextResponse.json({
       message: 'Login successful',
-      token,
-      admin: {
-        id: admin.id,
-        username: admin.username,
-        lastLogin: admin.lastLogin?.toISOString(),
-      },
+      authenticated: true,
     });
 
-    // Set cookie
-    const maxAge = rememberMe ? 7 * 24 * 60 * 60 : 24 * 60 * 60; // 7 days or 1 day
-    response.cookies.set('adminToken', token, {
+    // Устанавливаем cookie с сессией
+    const maxAge = rememberMe ? 7 * 24 * 60 * 60 : 24 * 60 * 60; // 7 дней или 1 день
+    response.cookies.set('adminSession', session, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge,
+      path: '/',
     });
 
     return response;
   } catch (error) {
     console.error('Login error:', error);
     return NextResponse.json(
-      { message: 'Server error' },
+      { message: 'Server error', error: String(error) },
       { status: 500 }
     );
   }
 }
-

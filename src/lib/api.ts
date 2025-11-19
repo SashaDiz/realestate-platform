@@ -101,16 +101,7 @@ class ApiClient {
       ...options,
     };
 
-    // Add auth token if available
-    if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('adminToken');
-      if (token) {
-        config.headers = {
-          ...config.headers,
-          Authorization: `Bearer ${token}`,
-        };
-      }
-    }
+    // Auth is handled via cookies, no need to add headers
 
     try {
       const response = await fetch(url, config);
@@ -182,43 +173,35 @@ class ApiClient {
   }
 
   // Auth API
-  async login(username: string, password: string, rememberMe: boolean = false): Promise<{
+  async login(password: string, rememberMe: boolean = false): Promise<{
     message: string;
-    token: string;
-    admin: { id: string; username: string; lastLogin: string };
+    authenticated: boolean;
   }> {
-    const response = await this.request<{
+    return this.request<{
       message: string;
-      token: string;
-      admin: { id: string; username: string; lastLogin: string };
+      authenticated: boolean;
     }>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ username, password, rememberMe }),
+      body: JSON.stringify({ password, rememberMe }),
     });
-
-    // Store token in localStorage
-    if (typeof window !== 'undefined' && response.token) {
-      localStorage.setItem('adminToken', response.token);
-    }
-
-    return response;
   }
 
   async logout(): Promise<{ message: string }> {
-    const response = await this.request<{ message: string }>('/auth/logout', {
+    return this.request<{ message: string }>('/auth/logout', {
       method: 'POST',
     });
-
-    // Remove token from localStorage
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('adminToken');
-    }
-
-    return response;
   }
 
   async checkAuth(): Promise<{ message: string; isAuthenticated: boolean }> {
-    return this.request<{ message: string; isAuthenticated: boolean }>('/auth/check');
+    try {
+      return await this.request<{ message: string; isAuthenticated: boolean }>('/auth/check');
+    } catch (error: any) {
+      // Если это не ошибка сервера (500), а просто отсутствие сессии, возвращаем isAuthenticated: false
+      if (error?.message?.includes('No session') || error?.message?.includes('Invalid or expired')) {
+        return { message: error.message, isAuthenticated: false };
+      }
+      throw error;
+    }
   }
 }
 

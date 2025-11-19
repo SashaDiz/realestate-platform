@@ -1,120 +1,82 @@
-import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
-import { randomUUID } from 'crypto';
-import pool from './db';
+import { cookies } from 'next/headers';
+import { createHmac } from 'crypto';
 
-export interface Admin {
-  id: string;
-  username: string;
-  lastLogin?: Date;
+// Простая функция для получения секрета из переменных окружения
+function getSecret(): string {
+  const secret = (process.env.JWT_SECRET || process.env.ADMIN_PASSWORD || 'default-secret-change-me').trim();
+  return secret;
 }
 
-const JWT_SECRET = (process.env.JWT_SECRET || '').trim();
+// Создаем простую сессию на основе пароля
+export function createSession(): string {
+  const secret = getSecret();
+  const timestamp = Date.now();
+  const sessionData = `admin-${timestamp}`;
+  
+  // Создаем HMAC подпись для сессии
+  const hmac = createHmac('sha256', secret);
+  hmac.update(sessionData);
+  const signature = hmac.digest('hex');
+  
+  return `${sessionData}-${signature}`;
+}
 
-export function generateToken(adminId: string): string {
-  if (!JWT_SECRET) {
-    throw new Error('JWT_SECRET is not defined in environment variables');
+// Проверяем валидность сессии
+export function verifySession(session: string): boolean {
+  if (!session) return false;
+  
+  try {
+    const parts = session.split('-');
+    if (parts.length < 3) return false;
+    
+    const timestamp = parseInt(parts[1]);
+    const providedSignature = parts.slice(2).join('-');
+    
+    // Проверяем, что сессия не старше 7 дней
+    const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 дней
+    if (Date.now() - timestamp > maxAge) {
+      return false;
+    }
+    
+    // Восстанавливаем сессию и проверяем подпись
+    const sessionData = `admin-${timestamp}`;
+    const secret = getSecret();
+    const hmac = createHmac('sha256', secret);
+    hmac.update(sessionData);
+    const expectedSignature = hmac.digest('hex');
+    
+    return providedSignature === expectedSignature;
+  } catch {
+    return false;
   }
-  return jwt.sign({ adminId }, JWT_SECRET, { expiresIn: '7d' });
 }
 
-export async function verifyToken(token: string): Promise<{ adminId: string }> {
-  if (!JWT_SECRET) {
-    throw new Error('JWT_SECRET is not defined in environment variables');
+// Проверяем пароль администратора
+export function verifyPassword(password: string): boolean {
+  const adminPassword = (process.env.ADMIN_PASSWORD || '').trim();
+  if (!adminPassword) {
+    return false;
   }
-  return jwt.verify(token, JWT_SECRET) as { adminId: string };
+  return password === adminPassword;
 }
 
-export async function hashPassword(password: string): Promise<string> {
-  const salt = await bcrypt.genSalt(12);
-  return bcrypt.hash(password, salt);
+// Получаем сессию из cookies
+export async function getSessionFromCookies(): Promise<string | null> {
+  const cookieStore = await cookies();
+  return cookieStore.get('adminSession')?.value || null;
 }
 
-export async function comparePassword(password: string, hash: string): Promise<boolean> {
-  return bcrypt.compare(password, hash);
-}
-
-export async function findAdminByUsername(username: string): Promise<Admin | null> {
-  const [rows] = await pool.execute(
-    'SELECT id, username, lastLogin FROM admins WHERE username = ?',
-    [username.toLowerCase()]
-  ) as any[];
-
-  if (rows.length === 0) {
-    return null;
+// Проверяем авторизацию администратора (helper для API routes)
+export async function requireAuth(): Promise<void> {
+  const session = await getSessionFromCookies();
+  
+  if (!session) {
+    throw new Error('Unauthorized: No session found');
   }
-
-  return {
-    id: rows[0].id,
-    username: rows[0].username,
-    lastLogin: rows[0].lastLogin,
-  };
-}
-
-export async function findAdminById(id: string): Promise<Admin | null> {
-  const [rows] = await pool.execute(
-    'SELECT id, username, lastLogin FROM admins WHERE id = ?',
-    [id]
-  ) as any[];
-
-  if (rows.length === 0) {
-    return null;
+  
+  const isValid = verifySession(session);
+  
+  if (!isValid) {
+    throw new Error('Unauthorized: Invalid or expired session');
   }
-
-  return {
-    id: rows[0].id,
-    username: rows[0].username,
-    lastLogin: rows[0].lastLogin,
-  };
 }
-
-export async function getAdminPasswordHash(username: string): Promise<string | null> {
-  const [rows] = await pool.execute(
-    'SELECT password FROM admins WHERE username = ?',
-    [username.toLowerCase()]
-  ) as any[];
-
-  if (rows.length === 0) {
-    return null;
-  }
-
-  return rows[0].password;
-}
-
-export async function createAdmin(username: string, password: string): Promise<Admin> {
-  const id = randomUUID();
-  const hashedPassword = await hashPassword(password);
-
-  await pool.execute(
-    'INSERT INTO admins (id, username, password) VALUES (?, ?, ?)',
-    [id, username.toLowerCase(), hashedPassword]
-  );
-
-  return {
-    id,
-    username: username.toLowerCase(),
-  };
-}
-
-export async function updateLastLogin(adminId: string): Promise<void> {
-  await pool.execute(
-    'UPDATE admins SET lastLogin = NOW() WHERE id = ?',
-    [adminId]
-  );
-}
-
-export async function updateAdminPassword(username: string, newPassword: string): Promise<void> {
-  const hashedPassword = await hashPassword(newPassword);
-  await pool.execute(
-    'UPDATE admins SET password = ? WHERE username = ?',
-    [hashedPassword, username.toLowerCase()]
-  );
-}
-
-export async function deleteAdmin(username: string): Promise<void> {
-  await pool.execute(
-    'DELETE FROM admins WHERE username = ?',
-    [username.toLowerCase()]
-  );
-}
-

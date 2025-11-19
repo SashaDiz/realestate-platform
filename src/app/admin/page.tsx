@@ -20,7 +20,7 @@ import Image from 'next/image';
 
 export default function AdminPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loginForm, setLoginForm] = useState({ username: '', password: '', rememberMe: false });
+  const [loginForm, setLoginForm] = useState({ password: '', rememberMe: false });
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
@@ -89,7 +89,7 @@ export default function AdminPage() {
     try {
       const response = await api.checkAuth();
       setIsAuthenticated(response.isAuthenticated);
-    } catch {
+    } catch (error: any) {
       setIsAuthenticated(false);
     }
   };
@@ -100,9 +100,9 @@ export default function AdminPage() {
     setLoginError('');
 
     try {
-      await api.login(loginForm.username, loginForm.password, loginForm.rememberMe);
+      await api.login(loginForm.password, loginForm.rememberMe);
       setIsAuthenticated(true);
-      setLoginForm({ username: '', password: '', rememberMe: false });
+      setLoginForm({ password: '', rememberMe: false });
     } catch (err) {
       setLoginError(err instanceof Error ? err.message : 'Ошибка входа');
     } finally {
@@ -261,20 +261,6 @@ export default function AdminPage() {
           )}
 
           <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Имя пользователя
-              </label>
-              <input
-                type="text"
-                required
-                value={loginForm.username}
-                onChange={(e) => setLoginForm(prev => ({ ...prev, username: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="admin"
-              />
-            </div>
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Пароль

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
 import pool from '@/lib/db';
-import { verifyToken } from '@/lib/auth';
-import { cookies } from 'next/headers';
+import { requireAuth } from '@/lib/auth';
 
 interface PropertyRow {
   id: string;
@@ -242,18 +241,7 @@ export async function GET(request: NextRequest) {
 // POST /api/properties - Create new property (admin only)
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get('adminToken')?.value || 
-                  request.headers.get('authorization')?.split(' ')[1];
-
-    if (!token) {
-      return NextResponse.json(
-        { message: 'Access token required' },
-        { status: 401 }
-      );
-    }
-
-    await verifyToken(token);
+    await requireAuth();
 
     const body = await request.json();
     const {
@@ -285,6 +273,39 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Validate ENUM values - exact match required for MySQL ENUM
+    const validTypes = ['Жилые помещения', 'Нежилые помещения', 'Машино-места', 'Гараж-боксы'];
+    const validTransactionTypes = ['Продажа', 'Аренда'];
+    
+    // Normalize: trim and ensure exact match (MySQL ENUM is case-sensitive and requires exact match)
+    const normalizedType = String(type).trim();
+    const normalizedTransactionType = String(transactionType).trim();
+    
+    // Find exact match (case-sensitive)
+    const matchedType = validTypes.find(t => t === normalizedType);
+    if (!matchedType) {
+      return NextResponse.json(
+        { 
+          message: `Invalid type. Must be one of: ${validTypes.join(', ')}`,
+          received: normalizedType,
+          receivedLength: normalizedType.length
+        },
+        { status: 400 }
+      );
+    }
+    
+    const matchedTransactionType = validTransactionTypes.find(t => t === normalizedTransactionType);
+    if (!matchedTransactionType) {
+      return NextResponse.json(
+        { 
+          message: `Invalid transactionType. Must be one of: ${validTransactionTypes.join(', ')}`,
+          received: normalizedTransactionType,
+          receivedLength: normalizedTransactionType.length
+        },
+        { status: 400 }
+      );
+    }
+
     const id = randomUUID();
     const [latitude, longitude] = coordinates;
 
@@ -305,8 +326,8 @@ export async function POST(request: NextRequest) {
         address,
         latitude,
         longitude,
-        type,
-        transactionType,
+        matchedType, // Use exact matched value
+        matchedTransactionType, // Use exact matched value
         investmentReturn || null,
         JSON.stringify(images),
         isFeatured || false,

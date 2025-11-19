@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import pool from '@/lib/db';
-import { verifyToken } from '@/lib/auth';
-import { cookies } from 'next/headers';
+import { requireAuth } from '@/lib/auth';
 
 interface PropertyDBRow {
   id: string;
@@ -89,13 +88,20 @@ export async function GET(
       createdAt: property.created_at.toISOString(),
       updatedAt: property.updated_at.toISOString(),
     });
-  } catch (error: unknown) {
+  } catch (error: any) {
+    // Обрабатываем ошибки авторизации
+    if (error?.message?.includes('Unauthorized')) {
+      return NextResponse.json(
+        { message: error.message },
+        { status: 401 }
+      );
+    }
+    
+    const errorObj = error as { code?: string; message?: string };
     console.error('Get property by ID error:', error);
     
-    const err = error as { code?: string; message?: string };
-    
     // Check if table doesn't exist
-    if (err.code === 'ER_NO_SUCH_TABLE' || err.message?.includes("doesn't exist")) {
+    if (errorObj.code === 'ER_NO_SUCH_TABLE' || errorObj.message?.includes("doesn't exist")) {
       return NextResponse.json(
         { message: 'Database not initialized. Please call POST /api/admin/init first.' },
         { status: 503 }
@@ -103,7 +109,7 @@ export async function GET(
     }
 
     // Check if connection failed
-    if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND') {
+    if (errorObj.code === 'ECONNREFUSED' || errorObj.code === 'ENOTFOUND') {
       return NextResponse.json(
         { message: 'Database connection failed. Please check your database configuration.' },
         { status: 503 }
@@ -111,7 +117,7 @@ export async function GET(
     }
 
     return NextResponse.json(
-      { message: err.message || 'Server error' },
+      { message: errorObj.message || 'Server error' },
       { status: 500 }
     );
   }
@@ -123,18 +129,7 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get('adminToken')?.value || 
-                  request.headers.get('authorization')?.split(' ')[1];
-
-    if (!token) {
-      return NextResponse.json(
-        { message: 'Access token required' },
-        { status: 401 }
-      );
-    }
-
-    await verifyToken(token);
+    await requireAuth();
 
     const { id } = params;
     const body = await request.json();
@@ -158,6 +153,58 @@ export async function PUT(
 
     const [latitude, longitude] = coordinates || [];
 
+    // Get current property to preserve values that aren't being updated
+    const [currentRows] = await pool.execute(
+      'SELECT * FROM properties WHERE id = ?',
+      [id]
+    ) as [PropertyDBRow[], unknown];
+
+    if (currentRows.length === 0) {
+      return NextResponse.json(
+        { message: 'Property not found' },
+        { status: 404 }
+      );
+    }
+
+    const current = currentRows[0];
+
+    // Validate ENUM values if provided - exact match required for MySQL ENUM
+    const validTypes = ['Жилые помещения', 'Нежилые помещения', 'Машино-места', 'Гараж-боксы'];
+    const validTransactionTypes = ['Продажа', 'Аренда'];
+    
+    // Normalize: trim and ensure exact match (MySQL ENUM is case-sensitive and requires exact match)
+    const normalizedType = type !== undefined ? String(type).trim() : current.type;
+    const normalizedTransactionType = transactionType !== undefined ? String(transactionType).trim() : current.transactionType;
+    
+    // Find exact match (case-sensitive) or use current value if not provided
+    const matchedType = type !== undefined 
+      ? validTypes.find(t => t === normalizedType)
+      : current.type;
+    if (type !== undefined && !matchedType) {
+      return NextResponse.json(
+        { 
+          message: `Invalid type. Must be one of: ${validTypes.join(', ')}`,
+          received: normalizedType,
+          receivedLength: normalizedType.length
+        },
+        { status: 400 }
+      );
+    }
+    
+    const matchedTransactionType = transactionType !== undefined
+      ? validTransactionTypes.find(t => t === normalizedTransactionType)
+      : current.transactionType;
+    if (transactionType !== undefined && !matchedTransactionType) {
+      return NextResponse.json(
+        { 
+          message: `Invalid transactionType. Must be one of: ${validTransactionTypes.join(', ')}`,
+          received: normalizedTransactionType,
+          receivedLength: normalizedTransactionType.length
+        },
+        { status: 400 }
+      );
+    }
+
     await pool.execute(
       `UPDATE properties SET
         title = ?, description = ?, shortDescription = ?, price = ?, area = ?,
@@ -167,27 +214,27 @@ export async function PUT(
         elevator = ?, furnished = ?
       WHERE id = ?`,
       [
-        title,
-        description,
-        shortDescription,
-        price,
-        area,
-        location,
-        address,
-        latitude,
-        longitude,
-        type,
-        transactionType,
-        investmentReturn || null,
-        JSON.stringify(images),
-        isFeatured || false,
-        layout || null,
-        specifications?.rooms || null,
-        specifications?.bathrooms || null,
-        specifications?.parking || false,
-        specifications?.balcony || false,
-        specifications?.elevator || false,
-        specifications?.furnished || false,
+        title ?? current.title,
+        description ?? current.description,
+        shortDescription ?? current.shortDescription,
+        price ?? current.price,
+        area ?? current.area,
+        location ?? current.location,
+        address ?? current.address,
+        latitude ?? current.latitude,
+        longitude ?? current.longitude,
+        matchedType, // Use exact matched value
+        matchedTransactionType, // Use exact matched value
+        investmentReturn !== undefined ? investmentReturn : current.investmentReturn,
+        images !== undefined ? JSON.stringify(images) : current.images,
+        isFeatured !== undefined ? isFeatured : current.isFeatured,
+        layout !== undefined ? layout : current.layout,
+        specifications?.rooms !== undefined ? specifications.rooms : current.rooms,
+        specifications?.bathrooms !== undefined ? specifications.bathrooms : current.bathrooms,
+        specifications?.parking !== undefined ? specifications.parking : current.parking,
+        specifications?.balcony !== undefined ? specifications.balcony : current.balcony,
+        specifications?.elevator !== undefined ? specifications.elevator : current.elevator,
+        specifications?.furnished !== undefined ? specifications.furnished : current.furnished,
         id,
       ]
     );
@@ -234,13 +281,20 @@ export async function PUT(
       createdAt: property.created_at.toISOString(),
       updatedAt: property.updated_at.toISOString(),
     });
-  } catch (error: unknown) {
+  } catch (error: any) {
+    // Обрабатываем ошибки авторизации
+    if (error?.message?.includes('Unauthorized')) {
+      return NextResponse.json(
+        { message: error.message },
+        { status: 401 }
+      );
+    }
+    
+    const errorObj = error as { code?: string; message?: string };
     console.error('Update property error:', error);
     
-    const err = error as { code?: string; message?: string };
-    
     // Check if table doesn't exist
-    if (err.code === 'ER_NO_SUCH_TABLE' || err.message?.includes("doesn't exist")) {
+    if (errorObj.code === 'ER_NO_SUCH_TABLE' || errorObj.message?.includes("doesn't exist")) {
       return NextResponse.json(
         { message: 'Database not initialized. Please call POST /api/admin/init first.' },
         { status: 503 }
@@ -248,7 +302,7 @@ export async function PUT(
     }
 
     // Check if connection failed
-    if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND') {
+    if (errorObj.code === 'ECONNREFUSED' || errorObj.code === 'ENOTFOUND') {
       return NextResponse.json(
         { message: 'Database connection failed. Please check your database configuration.' },
         { status: 503 }
@@ -256,7 +310,7 @@ export async function PUT(
     }
 
     return NextResponse.json(
-      { message: err.message || 'Server error' },
+      { message: errorObj.message || 'Server error' },
       { status: 500 }
     );
   }
@@ -268,18 +322,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get('adminToken')?.value || 
-                  request.headers.get('authorization')?.split(' ')[1];
-
-    if (!token) {
-      return NextResponse.json(
-        { message: 'Access token required' },
-        { status: 401 }
-      );
-    }
-
-    await verifyToken(token);
+    await requireAuth();
 
     const { id } = params;
 
@@ -300,13 +343,20 @@ export async function DELETE(
     }
 
     return NextResponse.json({ message: 'Property deleted successfully' });
-  } catch (error: unknown) {
+  } catch (error: any) {
+    // Обрабатываем ошибки авторизации
+    if (error?.message?.includes('Unauthorized')) {
+      return NextResponse.json(
+        { message: error.message },
+        { status: 401 }
+      );
+    }
+    
+    const errorObj = error as { code?: string; message?: string };
     console.error('Delete property error:', error);
     
-    const err = error as { code?: string; message?: string };
-    
     // Check if table doesn't exist
-    if (err.code === 'ER_NO_SUCH_TABLE' || err.message?.includes("doesn't exist")) {
+    if (errorObj.code === 'ER_NO_SUCH_TABLE' || errorObj.message?.includes("doesn't exist")) {
       return NextResponse.json(
         { message: 'Database not initialized. Please call POST /api/admin/init first.' },
         { status: 503 }
@@ -314,7 +364,7 @@ export async function DELETE(
     }
 
     // Check if connection failed
-    if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND') {
+    if (errorObj.code === 'ECONNREFUSED' || errorObj.code === 'ENOTFOUND') {
       return NextResponse.json(
         { message: 'Database connection failed. Please check your database configuration.' },
         { status: 503 }
@@ -322,7 +372,7 @@ export async function DELETE(
     }
 
     return NextResponse.json(
-      { message: err.message || 'Server error' },
+      { message: errorObj.message || 'Server error' },
       { status: 500 }
     );
   }

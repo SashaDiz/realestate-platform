@@ -29,6 +29,8 @@ services:
       dockerfile: Dockerfile.frontend
     container_name: real-estate-frontend
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: http://${DOMAIN}/api
@@ -50,10 +52,8 @@ services:
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_REGION: ${S3_REGION}
-      # Auth
-      JWT_SECRET: ${JWT_SECRET}
-      ADMIN_USERNAME: ${ADMIN_USERNAME}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      # Auth - используем env_file для правильной обработки спецсимволов
+      # JWT_SECRET, ADMIN_PASSWORD загружаются из .env через env_file
     depends_on:
       mysql:
         condition: service_healthy

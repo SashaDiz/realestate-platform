@@ -1,33 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyToken } from '@/lib/auth';
-import { cookies } from 'next/headers';
+import { getSessionFromCookies, verifySession } from '@/lib/auth';
 
 // GET /api/auth/check
 export async function GET(request: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get('adminToken')?.value || 
-                  request.headers.get('authorization')?.split(' ')[1];
+    const session = await getSessionFromCookies();
 
-    if (!token) {
+    if (!session) {
+      // Возвращаем 200, но isAuthenticated: false - это не ошибка
       return NextResponse.json(
-        { message: 'No token provided' },
-        { status: 401 }
+        { message: 'No session found', isAuthenticated: false },
+        { status: 200 }
       );
     }
 
-    await verifyToken(token);
+    // Проверяем валидность сессии
+    const isValid = verifySession(session);
+
+    if (!isValid) {
+      // Возвращаем 200, но isAuthenticated: false - это не ошибка
+      return NextResponse.json(
+        { message: 'Invalid or expired session', isAuthenticated: false },
+        { status: 200 }
+      );
+    }
 
     return NextResponse.json({
       message: 'Authenticated',
       isAuthenticated: true,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Check auth error:', error);
     return NextResponse.json(
-      { message: 'Server error' },
+      { message: 'Server error', error: error?.message || String(error), isAuthenticated: false },
       { status: 500 }
     );
   }
 }
-
