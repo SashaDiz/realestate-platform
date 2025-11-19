@@ -1,48 +1,28 @@
-version: '3.8'
-
 services:
-  # MongoDB Database
-  mongodb:
-    image: mongo:7.0
-    container_name: real-estate-mongodb
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: real-estate-mysql
     restart: unless-stopped
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
-      MONGO_INITDB_DATABASE: real-estate-directory
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${DB_NAME:-realestate}
+      MYSQL_USER: ${DB_USER:-realestate_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-realestate_password}
     ports:
-      - "27017:27017"
+      - "${DB_PORT:-3306}:3306"
     volumes:
-      - mongodb_data:/data/db
-      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
-
-  # Backend API
-  backend:
-    build:
-      context: .
-      dockerfile: Dockerfile.backend
-    container_name: real-estate-backend
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      NODE_ENV: production
-      PORT: 5001
-    # Убираем проброс порта наружу для продакшена
-    # ports:
-    #   - "5001:5001"
-    depends_on:
-      - mongodb
-    volumes:
-      - ./backend/ssl:/app/ssl
+      - mysql_data:/var/lib/mysql
+      - ./src/lib/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - real-estate-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://90.156.225.18:5001/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # Frontend Application
+  # Frontend App (Next.js with API routes)
   frontend:
     build:
       context: .
@@ -51,31 +31,51 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: http://90.156.225.18:5001/api
-      NEXT_PUBLIC_SITE_NAME: PropertyHub
-      NEXT_PUBLIC_SITE_DESCRIPTION: Каталог недвижимости для инвестиций
-    # Убираем проброс порта наружу для продакшена
-    # ports:
-    #   - "3000:3000"
+      NEXT_PUBLIC_API_URL: http://${DOMAIN}/api
+      NEXT_PUBLIC_SITE_NAME: ${NEXT_PUBLIC_SITE_NAME}
+      NEXT_PUBLIC_SITE_DESCRIPTION: ${NEXT_PUBLIC_SITE_DESCRIPTION}
+      # SSL Configuration
+      ALLOW_SELF_SIGNED_CERT: ${ALLOW_SELF_SIGNED_CERT:-true}
+      NODE_TLS_REJECT_UNAUTHORIZED: ${NODE_TLS_REJECT_UNAUTHORIZED:-0}
+      # MySQL Database
+      DB_HOST: ${DB_HOST:-mysql}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_USER: ${DB_USER:-realestate_user}
+      DB_PASSWORD: ${DB_PASSWORD:-realestate_password}
+      DB_NAME: ${DB_NAME:-realestate}
+      DB_SSL_CA_PATH: ${DB_SSL_CA_PATH:-/app/ca.crt}
+      # AWS S3
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_REGION: ${S3_REGION}
+      # Auth
+      JWT_SECRET: ${JWT_SECRET}
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
     depends_on:
-      - backend
+      mysql:
+        condition: service_healthy
+    networks:
+      - real-estate-network
 
-  # Nginx Reverse Proxy (Production)
   nginx:
     image: nginx:alpine
     container_name: real-estate-nginx
     restart: unless-stopped
     ports:
-      - "8080:80"
-      - "9000:443"
+      - "80:80"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./ssl:/etc/nginx/ssl:ro
     depends_on:
       - frontend
-      - backend
+    networks:
+      - real-estate-network
+
+networks:
+  real-estate-network:
+    driver: bridge
 
 volumes:
-  mongodb_data:
-    driver: local
-
+  mysql_data:
