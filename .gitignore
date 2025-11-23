@@ -42,6 +42,9 @@ yarn-error.log*
 *.swo
 *~
 
+# Cursor
+.cursor/
+
 # OS
 .DS_Store
 Thumbs.db
