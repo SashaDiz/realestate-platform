@@ -30,9 +30,11 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
 
-# Install wget for healthcheck
-RUN apk add --no-cache wget
+# Install wget for healthcheck and curl for debugging
+RUN apk add --no-cache wget curl ca-certificates
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
@@ -48,15 +50,14 @@ RUN chown nextjs:nodejs .next
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Verify that server.js exists
-RUN ls -la /app && echo "=== Checking for server.js ===" && ls -la /app/server.js || echo "WARNING: server.js not found!"
+# Copy SSL certificate for DB if it exists (optional, will be downloaded if needed)
+# This is needed for secure connections to cloud databases like Timeweb Cloud
+RUN wget -q https://st.timeweb.com/cloud-static/ca.crt -O /app/ca.crt 2>/dev/null || echo "SSL cert will be handled at runtime"
+RUN chown nextjs:nodejs /app/ca.crt 2>/dev/null || true
 
 USER nextjs
 
 EXPOSE 3000
 
-ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
-
-# Start the application with error output
-CMD echo "Starting Next.js server..." && node server.js
+# Start the application
+CMD ["node", "server.js"]
