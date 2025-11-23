@@ -5,71 +5,52 @@ services:
     container_name: real-estate-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpassword}
-      MYSQL_DATABASE: ${DB_NAME:-realestate}
-      MYSQL_USER: ${DB_USER:-realestate_user}
-      MYSQL_PASSWORD: ${DB_PASSWORD:-realestate_password}
-    ports:
-      - "${DB_PORT:-3306}:3306"
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
     networks:
-      - real-estate-network
+      - app-network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
-  # Frontend App (Next.js with API routes)
-  frontend:
+  # Application (Next.js Full-Stack App)
+  app:
     build:
       context: .
-      dockerfile: Dockerfile.frontend
-    container_name: real-estate-frontend
+      dockerfile: Dockerfile
+    container_name: real-estate-app
     restart: unless-stopped
-    env_file:
-      - .env
+    ports:
+      - "${PORT:-80}:3000"
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: http://${DOMAIN}/api
-      NEXT_PUBLIC_SITE_NAME: ${NEXT_PUBLIC_SITE_NAME}
-      NEXT_PUBLIC_SITE_DESCRIPTION: ${NEXT_PUBLIC_SITE_DESCRIPTION}
-      # SSL Configuration
-      ALLOW_SELF_SIGNED_CERT: ${ALLOW_SELF_SIGNED_CERT:-true}
-      NODE_TLS_REJECT_UNAUTHORIZED: ${NODE_TLS_REJECT_UNAUTHORIZED:-0}
-      # MySQL Database
-      DB_HOST: ${DB_HOST:-mysql}
-      DB_PORT: ${DB_PORT:-3306}
-      DB_USER: ${DB_USER:-realestate_user}
-      DB_PASSWORD: ${DB_PASSWORD:-realestate_password}
-      DB_NAME: ${DB_NAME:-realestate}
-      DB_SSL_CA_PATH: ${DB_SSL_CA_PATH:-/app/ca.crt}
-      # AWS S3
+      # Database
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      # S3 Storage
       S3_ENDPOINT: ${S3_ENDPOINT}
       S3_BUCKET_NAME: ${S3_BUCKET_NAME}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_REGION: ${S3_REGION}
-      # Auth - используем env_file для правильной обработки спецсимволов
-      # JWT_SECRET, ADMIN_PASSWORD загружаются из .env через env_file
+      # Public Variables
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      NEXT_PUBLIC_SITE_NAME: ${NEXT_PUBLIC_SITE_NAME}
+      NEXT_PUBLIC_SITE_DESCRIPTION: ${NEXT_PUBLIC_SITE_DESCRIPTION}
     depends_on:
       mysql:
         condition: service_healthy
     networks:
-      - real-estate-network
-
-  nginx:
-    build:
-      context: .
-      dockerfile: Dockerfile.nginx
-    container_name: real-estate-nginx
-    restart: unless-stopped
-    ports:
-      - "${NGINX_PORT:-8080}:80"
-    depends_on:
-      - frontend
-    networks:
-      - real-estate-network
+      - app-network
 
 networks:
-  real-estate-network:
+  app-network:
     driver: bridge

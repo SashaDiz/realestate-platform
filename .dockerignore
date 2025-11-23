@@ -8,19 +8,18 @@ yarn-error.log*
 .next
 dist
 build
+out
 
-# Environment files
-#.env
-#.env.local
-#.env.development.local
-#.env.test.local
-#.env.production.local
+# Environment files (не включаем в образ)
+.env
+.env.*
 
 # IDE files
 .vscode
 .idea
 *.swp
 *.swo
+.cursor
 
 # OS files
 .DS_Store
@@ -29,11 +28,17 @@ Thumbs.db
 # Git
 .git
 .gitignore
+.gitattributes
 
-# Docker
-Dockerfile
+# Docker files
 .dockerignore
 docker-compose*.yml
+
+# Documentation
+*.md
+MIGRATION.md
+STACK.md
+README.md
 
 # Logs
 logs
@@ -45,28 +50,19 @@ pids
 *.seed
 *.pid.lock
 
-# Coverage directory used by tools like istanbul
+# Test and coverage
 coverage
-
-# Dependency directories
-jspm_packages/
-
-# Optional npm cache directory
-.npm
-
-# Optional REPL history
-.node_repl_history
-
-# Output of 'npm pack'
-*.tgz
-
-# Yarn Integrity file
-.yarn-integrity
+.nyc_output
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
 
 # TypeScript cache
 *.tsbuildinfo
 
 # Temporary folders
-tmp/
-temp/
+tmp
+temp
+terminals
 

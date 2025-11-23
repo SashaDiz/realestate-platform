@@ -1,7 +1,0 @@
-FROM nginx:alpine
-
-# Копирование кастомной конфигурации nginx
-COPY nginx.conf /etc/nginx/nginx.conf
-
-# Nginx будет работать в foreground режиме благодаря daemon off; в конфиге
-

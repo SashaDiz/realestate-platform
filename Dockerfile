@@ -1,26 +1,29 @@
-# Используем Node.js 20 Alpine для меньшего размера образа
+# Use the official Node.js 20 image
 FROM node:20-alpine AS base
 
-# Установка зависимостей
+# Install dependencies only when needed
 FROM base AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-# Копирование package файлов
+# Copy package files
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm ci --only=production
 
-# Сборка приложения
+# Rebuild the source code only when needed
 FROM base AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Сборка
+# Disable telemetry during build
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Build the application
 RUN npm run build
 
-# Production образ
+# Production image, copy all the files and run next
 FROM base AS runner
 WORKDIR /app
 
@@ -32,14 +35,12 @@ RUN adduser --system --uid 1001 nextjs
 
 COPY --from=builder /app/public ./public
 
-# Копирование SSL сертификата для MySQL
-COPY --chown=nextjs:nodejs ca.crt ./ca.crt
-
-# Права доступа для prerender cache
+# Set the correct permission for prerender cache
 RUN mkdir .next
 RUN chown nextjs:nodejs .next
 
-# Копирование standalone сборки
+# Automatically leverage output traces to reduce image size
+# https://nextjs.org/docs/advanced-features/output-file-tracing
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
@@ -50,5 +51,5 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
+# Start the application
 CMD ["node", "server.js"]
-

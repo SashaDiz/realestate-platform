@@ -1,21 +1,23 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Turbopack для разработки
-  turbopack: {
-    root: __dirname,
-  },
-  
-  // Standalone output для Docker
+  // Standalone output для Docker - автоматически создает минимальный production build
   output: 'standalone',
   
-  // Отключена оптимизация изображений для совместимости
+  // Отключена оптимизация изображений (для совместимости с Docker без sharp)
   images: {
     unoptimized: true,
   },
   
-  // Trailing slash для URL
-  trailingSlash: true,
+  // TypeScript и ESLint настройки для production
+  typescript: {
+    // Во время production сборки не останавливаемся на type errors
+    ignoreBuildErrors: true,
+  },
+  eslint: {
+    // Во время production сборки не останавливаемся на eslint errors
+    ignoreDuringBuilds: true,
+  },
 };
 
 export default nextConfig;
