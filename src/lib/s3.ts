@@ -1,16 +1,7 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-// Настройка для игнорирования ошибок самоподписанных сертификатов
-// Можно переопределить через переменную окружения ALLOW_SELF_SIGNED_CERT=true
-const allowSelfSignedCert = process.env.ALLOW_SELF_SIGNED_CERT === 'true' || process.env.NODE_ENV !== 'production';
-
-// Если нужно игнорировать ошибки сертификата, устанавливаем глобальную переменную
-// (используется только если ALLOW_SELF_SIGNED_CERT=true)
-if (allowSelfSignedCert && typeof process !== 'undefined') {
-  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-}
-
+// Initialize S3 client
 const s3Client = new S3Client({
   region: process.env.S3_REGION || 'ru-1',
   endpoint: process.env.S3_ENDPOINT || 'https://s3.twcstorage.ru',
@@ -18,76 +9,78 @@ const s3Client = new S3Client({
     accessKeyId: process.env.S3_ACCESS_KEY || '',
     secretAccessKey: process.env.S3_SECRET_KEY || '',
   },
-  forcePathStyle: true, // Обязательно для S3-совместимых сервисов
+  forcePathStyle: true, // Required for some S3-compatible services
 });
 
-const BUCKET_NAME = process.env.S3_BUCKET_NAME || '';
+export const bucketName = process.env.S3_BUCKET_NAME || '';
 
-export interface UploadResult {
-  success: boolean;
-  url: string;
-  filename: string;
-  size: number;
-  type: string;
-}
-
+// Upload file to S3
 export async function uploadFileToS3(
-  file: Buffer,
+  file: Buffer | Uint8Array | string,
   fileName: string,
-  contentType: string
-): Promise<UploadResult> {
+  contentType: string = 'image/jpeg'
+): Promise<string> {
   const key = `real-estate/${Date.now()}-${fileName}`;
-
+  
   const command = new PutObjectCommand({
-    Bucket: BUCKET_NAME,
+    Bucket: bucketName,
     Key: key,
     Body: file,
     ContentType: contentType,
-    ACL: 'public-read',
+    ACL: 'public-read', // Make file publicly accessible
   });
 
-  await s3Client.send(command);
-
-  const url = `${process.env.S3_ENDPOINT}/${BUCKET_NAME}/${key}`;
-
-  return {
-    success: true,
-    url,
-    filename: fileName,
-    size: file.length,
-    type: contentType,
-  };
+  try {
+    await s3Client.send(command);
+    // Return the public URL
+    return `${process.env.S3_ENDPOINT}/${bucketName}/${key}`;
+  } catch (error) {
+    console.error('Error uploading to S3:', error);
+    throw new Error('Failed to upload file to S3');
+  }
 }
 
+// Delete file from S3
 export async function deleteFileFromS3(fileUrl: string): Promise<void> {
-  // Extract key from URL
-  const urlParts = fileUrl.split('/');
-  const key = urlParts.slice(urlParts.indexOf(BUCKET_NAME) + 1).join('/');
+  try {
+    // Extract key from URL
+    const urlParts = fileUrl.split('/');
+    const key = urlParts.slice(-2).join('/'); // Get last two parts (folder/filename)
+    
+    const command = new DeleteObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+    });
 
-  const command = new DeleteObjectCommand({
-    Bucket: BUCKET_NAME,
-    Key: key,
-  });
-
-  await s3Client.send(command);
+    await s3Client.send(command);
+  } catch (error) {
+    console.error('Error deleting from S3:', error);
+    throw new Error('Failed to delete file from S3');
+  }
 }
 
+// Generate presigned URL for upload (client-side uploads)
 export async function generatePresignedUploadUrl(
   fileName: string,
   contentType: string = 'image/jpeg'
 ): Promise<{ uploadUrl: string; fileUrl: string }> {
   const key = `real-estate/${Date.now()}-${fileName}`;
-
+  
   const command = new PutObjectCommand({
-    Bucket: BUCKET_NAME,
+    Bucket: bucketName,
     Key: key,
     ContentType: contentType,
     ACL: 'public-read',
   });
 
-  const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
-  const fileUrl = `${process.env.S3_ENDPOINT}/${BUCKET_NAME}/${key}`;
-
-  return { uploadUrl, fileUrl };
+  try {
+    const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 }); // 1 hour
+    const fileUrl = `${process.env.S3_ENDPOINT}/${bucketName}/${key}`;
+    
+    return { uploadUrl, fileUrl };
+  } catch (error) {
+    console.error('Error generating presigned URL:', error);
+    throw new Error('Failed to generate upload URL');
+  }
 }
 

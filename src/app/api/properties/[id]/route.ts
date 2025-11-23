@@ -2,6 +2,36 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 
+// Helper function to safely parse images field
+function parseImages(images: string | string[]): string[] {
+  // If already an array, return as is
+  if (Array.isArray(images)) {
+    return images;
+  }
+  
+  // If empty string, return empty array
+  if (!images || images.trim() === '') {
+    return [];
+  }
+  
+  // Try to parse as JSON
+  try {
+    const parsed = JSON.parse(images);
+    if (Array.isArray(parsed)) {
+      return parsed;
+    }
+    // If parsed but not an array, wrap in array
+    return [String(images)];
+  } catch {
+    // If parsing fails, check if it's a data URI
+    if (typeof images === 'string' && images.startsWith('data:')) {
+      return [images];
+    }
+    // Otherwise, wrap in array
+    return [String(images)];
+  }
+}
+
 interface PropertyDBRow {
   id: string;
   title: string;
@@ -72,7 +102,7 @@ export async function GET(
       type: property.type,
       transactionType: property.transactionType,
       investmentReturn: property.investmentReturn ? parseFloat(String(property.investmentReturn)) : undefined,
-      images: JSON.parse(property.images),
+      images: parseImages(property.images),
       isFeatured: Boolean(property.isFeatured),
       layout: property.layout || undefined,
       specifications: {
@@ -88,20 +118,20 @@ export async function GET(
       createdAt: property.created_at.toISOString(),
       updatedAt: property.updated_at.toISOString(),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Обрабатываем ошибки авторизации
-    if (error?.message?.includes('Unauthorized')) {
+    const err = error as { message?: string; code?: string };
+    if (err?.message?.includes('Unauthorized')) {
       return NextResponse.json(
-        { message: error.message },
+        { message: err.message },
         { status: 401 }
       );
     }
     
-    const errorObj = error as { code?: string; message?: string };
     console.error('Get property by ID error:', error);
     
     // Check if table doesn't exist
-    if (errorObj.code === 'ER_NO_SUCH_TABLE' || errorObj.message?.includes("doesn't exist")) {
+    if (err.code === 'ER_NO_SUCH_TABLE' || err.message?.includes("doesn't exist")) {
       return NextResponse.json(
         { message: 'Database not initialized. Please call POST /api/admin/init first.' },
         { status: 503 }
@@ -109,7 +139,7 @@ export async function GET(
     }
 
     // Check if connection failed
-    if (errorObj.code === 'ECONNREFUSED' || errorObj.code === 'ENOTFOUND') {
+    if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND') {
       return NextResponse.json(
         { message: 'Database connection failed. Please check your database configuration.' },
         { status: 503 }
@@ -117,7 +147,7 @@ export async function GET(
     }
 
     return NextResponse.json(
-      { message: errorObj.message || 'Server error' },
+      { message: err.message || 'Server error' },
       { status: 500 }
     );
   }
@@ -168,11 +198,11 @@ export async function PUT(
 
     const current = currentRows[0];
 
-    // Validate ENUM values if provided - exact match required for MySQL ENUM
+    // Validate values if provided - exact match required (validated at application level)
     const validTypes = ['Жилые помещения', 'Нежилые помещения', 'Машино-места', 'Гараж-боксы'];
     const validTransactionTypes = ['Продажа', 'Аренда'];
     
-    // Normalize: trim and ensure exact match (MySQL ENUM is case-sensitive and requires exact match)
+    // Normalize: trim and ensure exact match
     const normalizedType = type !== undefined ? String(type).trim() : current.type;
     const normalizedTransactionType = transactionType !== undefined ? String(transactionType).trim() : current.transactionType;
     
@@ -265,7 +295,7 @@ export async function PUT(
       type: property.type,
       transactionType: property.transactionType,
       investmentReturn: property.investmentReturn ? parseFloat(String(property.investmentReturn)) : undefined,
-      images: JSON.parse(property.images),
+      images: parseImages(property.images),
       isFeatured: Boolean(property.isFeatured),
       layout: property.layout || undefined,
       specifications: {
@@ -281,20 +311,20 @@ export async function PUT(
       createdAt: property.created_at.toISOString(),
       updatedAt: property.updated_at.toISOString(),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Обрабатываем ошибки авторизации
-    if (error?.message?.includes('Unauthorized')) {
+    const err = error as { message?: string; code?: string };
+    if (err?.message?.includes('Unauthorized')) {
       return NextResponse.json(
-        { message: error.message },
+        { message: err.message },
         { status: 401 }
       );
     }
     
-    const errorObj = error as { code?: string; message?: string };
     console.error('Update property error:', error);
     
     // Check if table doesn't exist
-    if (errorObj.code === 'ER_NO_SUCH_TABLE' || errorObj.message?.includes("doesn't exist")) {
+    if (err.code === 'ER_NO_SUCH_TABLE' || err.message?.includes("doesn't exist")) {
       return NextResponse.json(
         { message: 'Database not initialized. Please call POST /api/admin/init first.' },
         { status: 503 }
@@ -302,7 +332,7 @@ export async function PUT(
     }
 
     // Check if connection failed
-    if (errorObj.code === 'ECONNREFUSED' || errorObj.code === 'ENOTFOUND') {
+    if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND') {
       return NextResponse.json(
         { message: 'Database connection failed. Please check your database configuration.' },
         { status: 503 }
@@ -310,7 +340,7 @@ export async function PUT(
     }
 
     return NextResponse.json(
-      { message: errorObj.message || 'Server error' },
+      { message: err.message || 'Server error' },
       { status: 500 }
     );
   }
@@ -343,20 +373,20 @@ export async function DELETE(
     }
 
     return NextResponse.json({ message: 'Property deleted successfully' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Обрабатываем ошибки авторизации
-    if (error?.message?.includes('Unauthorized')) {
+    const err = error as { message?: string; code?: string };
+    if (err?.message?.includes('Unauthorized')) {
       return NextResponse.json(
-        { message: error.message },
+        { message: err.message },
         { status: 401 }
       );
     }
     
-    const errorObj = error as { code?: string; message?: string };
     console.error('Delete property error:', error);
     
     // Check if table doesn't exist
-    if (errorObj.code === 'ER_NO_SUCH_TABLE' || errorObj.message?.includes("doesn't exist")) {
+    if (err.code === 'ER_NO_SUCH_TABLE' || err.message?.includes("doesn't exist")) {
       return NextResponse.json(
         { message: 'Database not initialized. Please call POST /api/admin/init first.' },
         { status: 503 }
@@ -364,7 +394,7 @@ export async function DELETE(
     }
 
     // Check if connection failed
-    if (errorObj.code === 'ECONNREFUSED' || errorObj.code === 'ENOTFOUND') {
+    if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND') {
       return NextResponse.json(
         { message: 'Database connection failed. Please check your database configuration.' },
         { status: 503 }
@@ -372,7 +402,7 @@ export async function DELETE(
     }
 
     return NextResponse.json(
-      { message: errorObj.message || 'Server error' },
+      { message: err.message || 'Server error' },
       { status: 500 }
     );
   }

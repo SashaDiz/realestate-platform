@@ -35,6 +35,36 @@ interface PropertyRow {
   updated_at?: Date;
 }
 
+// Helper function to safely parse images field
+function parseImages(images: string | string[]): string[] {
+  // If already an array, return as is
+  if (Array.isArray(images)) {
+    return images;
+  }
+  
+  // If empty string, return empty array
+  if (!images || images.trim() === '') {
+    return [];
+  }
+  
+  // Try to parse as JSON
+  try {
+    const parsed = JSON.parse(images);
+    if (Array.isArray(parsed)) {
+      return parsed;
+    }
+    // If parsed but not an array, wrap in array
+    return [String(images)];
+  } catch {
+    // If parsing fails, check if it's a data URI
+    if (typeof images === 'string' && images.startsWith('data:')) {
+      return [images];
+    }
+    // Otherwise, wrap in array
+    return [String(images)];
+  }
+}
+
 // GET /api/properties - Get all properties with filtering
 export async function GET(request: NextRequest) {
   try {
@@ -146,7 +176,8 @@ export async function GET(request: NextRequest) {
         area,
         location,
         address,
-        JSON_ARRAY(latitude, longitude) as coordinates,
+        latitude,
+        longitude,
         type,
         transactionType,
         investmentReturn,
@@ -180,11 +211,14 @@ export async function GET(request: NextRequest) {
       area: parseFloat(String(row.area)),
       location: row.location,
       address: row.address,
-      coordinates: JSON.parse(row.coordinates),
+      coordinates: [
+        row.latitude != null ? parseFloat(String(row.latitude)) : 0,
+        row.longitude != null ? parseFloat(String(row.longitude)) : 0
+      ] as [number, number],
       type: row.type,
       transactionType: row.transactionType,
       investmentReturn: row.investmentReturn ? parseFloat(String(row.investmentReturn)) : undefined,
-      images: JSON.parse(row.images),
+      images: parseImages(row.images),
       isFeatured: Boolean(row.isFeatured),
       layout: row.layout || undefined,
       specifications: {
@@ -213,26 +247,72 @@ export async function GET(request: NextRequest) {
   } catch (error: unknown) {
     console.error('Get properties error:', error);
     
-    const err = error as { code?: string; message?: string };
+    const err = error as { code?: string; errno?: number; sqlState?: string; message?: string; sql?: string };
     
     // Check if table doesn't exist
     if (err.code === 'ER_NO_SUCH_TABLE' || err.message?.includes("doesn't exist")) {
       return NextResponse.json(
-        { message: 'Database not initialized. Please call POST /api/admin/init first.' },
+        { 
+          message: 'Database not initialized. Please call POST /api/admin/init first.',
+          code: err.code,
+        },
         { status: 503 }
       );
     }
 
     // Check if connection failed
-    if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND') {
+    if (err.code === 'ECONNREFUSED') {
       return NextResponse.json(
-        { message: 'Database connection failed. Please check your database configuration.' },
+        { 
+          message: 'Database connection refused. Please check if MySQL server is running and DB_HOST is correct.',
+          code: err.code,
+          errno: err.errno,
+        },
+        { status: 503 }
+      );
+    }
+
+    if (err.code === 'ENOTFOUND') {
+      return NextResponse.json(
+        { 
+          message: `Database host not found. Please verify DB_HOST environment variable is correct. Current host: ${process.env.DB_HOST || 'not set'}`,
+          code: err.code,
+          errno: err.errno,
+        },
+        { status: 503 }
+      );
+    }
+
+    if (err.code === 'ETIMEDOUT') {
+      return NextResponse.json(
+        { 
+          message: 'Database connection timeout. Please check network connectivity and DB_HOST.',
+          code: err.code,
+        },
+        { status: 503 }
+      );
+    }
+
+    if (err.code === 'ER_ACCESS_DENIED_ERROR' || err.code === 'ER_DBACCESS_DENIED_ERROR') {
+      const dbName = process.env.DB_NAME || 'not set';
+      return NextResponse.json(
+        { 
+          message: `Database access denied. User '${process.env.DB_USER || 'unknown'}' does not have access to database '${dbName}'. Please check DB_USER, DB_PASSWORD, and DB_NAME. For Timeweb Cloud, use DB_NAME=default_db.`,
+          code: err.code,
+          database: dbName,
+          user: process.env.DB_USER || 'not set',
+        },
         { status: 503 }
       );
     }
 
     return NextResponse.json(
-      { message: err.message || 'Server error' },
+      { 
+        message: err.message || 'Server error',
+        code: err.code,
+        errno: err.errno,
+        sqlState: err.sqlState,
+      },
       { status: 500 }
     );
   }
@@ -273,13 +353,31 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Validate ENUM values - exact match required for MySQL ENUM
+    // Validate values - exact match required (validated at application level)
     const validTypes = ['Жилые помещения', 'Нежилые помещения', 'Машино-места', 'Гараж-боксы'];
     const validTransactionTypes = ['Продажа', 'Аренда'];
     
-    // Normalize: trim and ensure exact match (MySQL ENUM is case-sensitive and requires exact match)
-    const normalizedType = String(type).trim();
-    const normalizedTransactionType = String(transactionType).trim();
+    // Normalize: trim, remove extra spaces, normalize unicode
+    const normalizedType = String(type)
+      .trim()
+      .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+      .normalize('NFC'); // Normalize Unicode
+      
+    const normalizedTransactionType = String(transactionType)
+      .trim()
+      .replace(/\s+/g, ' ')
+      .normalize('NFC');
+    
+    console.log('Property type validation:', {
+      originalType: type,
+      normalizedType,
+      typeLength: normalizedType.length,
+      typeBytes: Buffer.from(normalizedType, 'utf8').length,
+      typeCharCodes: Array.from(normalizedType).map(c => c.charCodeAt(0)),
+      validTypes,
+      originalTransactionType: transactionType,
+      normalizedTransactionType,
+    });
     
     // Find exact match (case-sensitive)
     const matchedType = validTypes.find(t => t === normalizedType);
@@ -288,7 +386,12 @@ export async function POST(request: NextRequest) {
         { 
           message: `Invalid type. Must be one of: ${validTypes.join(', ')}`,
           received: normalizedType,
-          receivedLength: normalizedType.length
+          receivedLength: normalizedType.length,
+          receivedCharCodes: Array.from(normalizedType).map(c => c.charCodeAt(0)),
+          validCharCodes: validTypes.map(t => ({
+            type: t,
+            codes: Array.from(t).map(c => c.charCodeAt(0))
+          }))
         },
         { status: 400 }
       );
@@ -363,7 +466,7 @@ export async function POST(request: NextRequest) {
       type: property.type,
       transactionType: property.transactionType,
       investmentReturn: property.investmentReturn ? parseFloat(String(property.investmentReturn)) : undefined,
-      images: JSON.parse(property.images),
+      images: parseImages(property.images),
       isFeatured: Boolean(property.isFeatured),
       layout: property.layout || undefined,
       specifications: {
@@ -382,26 +485,72 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     console.error('Create property error:', error);
     
-    const err = error as { code?: string; message?: string };
+    const err = error as { code?: string; errno?: number; sqlState?: string; message?: string; sql?: string };
     
     // Check if table doesn't exist
     if (err.code === 'ER_NO_SUCH_TABLE' || err.message?.includes("doesn't exist")) {
       return NextResponse.json(
-        { message: 'Database not initialized. Please call POST /api/admin/init first.' },
+        { 
+          message: 'Database not initialized. Please call POST /api/admin/init first.',
+          code: err.code,
+        },
         { status: 503 }
       );
     }
 
     // Check if connection failed
-    if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND') {
+    if (err.code === 'ECONNREFUSED') {
       return NextResponse.json(
-        { message: 'Database connection failed. Please check your database configuration.' },
+        { 
+          message: 'Database connection refused. Please check if MySQL server is running and DB_HOST is correct.',
+          code: err.code,
+          errno: err.errno,
+        },
+        { status: 503 }
+      );
+    }
+
+    if (err.code === 'ENOTFOUND') {
+      return NextResponse.json(
+        { 
+          message: `Database host not found. Please verify DB_HOST environment variable is correct. Current host: ${process.env.DB_HOST || 'not set'}`,
+          code: err.code,
+          errno: err.errno,
+        },
+        { status: 503 }
+      );
+    }
+
+    if (err.code === 'ETIMEDOUT') {
+      return NextResponse.json(
+        { 
+          message: 'Database connection timeout. Please check network connectivity and DB_HOST.',
+          code: err.code,
+        },
+        { status: 503 }
+      );
+    }
+
+    if (err.code === 'ER_ACCESS_DENIED_ERROR' || err.code === 'ER_DBACCESS_DENIED_ERROR') {
+      const dbName = process.env.DB_NAME || 'not set';
+      return NextResponse.json(
+        { 
+          message: `Database access denied. User '${process.env.DB_USER || 'unknown'}' does not have access to database '${dbName}'. Please check DB_USER, DB_PASSWORD, and DB_NAME. For Timeweb Cloud, use DB_NAME=default_db.`,
+          code: err.code,
+          database: dbName,
+          user: process.env.DB_USER || 'not set',
+        },
         { status: 503 }
       );
     }
 
     return NextResponse.json(
-      { message: err.message || 'Server error' },
+      { 
+        message: err.message || 'Server error',
+        code: err.code,
+        errno: err.errno,
+        sqlState: err.sqlState,
+      },
       { status: 500 }
     );
   }

@@ -27,6 +27,8 @@ export default function AdminPage() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isDatabaseInitialized, setIsDatabaseInitialized] = useState(true);
+  const [isInitializing, setIsInitializing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'createdAt' | 'title' | 'price' | 'views' | 'formSubmissions'>('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -37,24 +39,15 @@ export default function AdminPage() {
     title: '',
     description: '',
     shortDescription: '',
-    price: 0,
-    area: 0,
+    price: '' as number | '',
+    area: '' as number | '',
     location: '',
     address: '',
     coordinates: [55.7558, 37.6176] as [number, number],
     type: 'Жилые помещения' as Property['type'],
     transactionType: 'Продажа' as Property['transactionType'],
-    investmentReturn: 0,
+    investmentReturn: '' as number | '',
     images: [] as string[],
-    layout: '',
-    specifications: {
-      rooms: 0,
-      bathrooms: 0,
-      parking: false,
-      balcony: false,
-      elevator: false,
-      furnished: false,
-    }
   });
   const [isSaving, setIsSaving] = useState(false);
 
@@ -66,6 +59,7 @@ export default function AdminPage() {
     try {
       setLoading(true);
       setError(null);
+      setIsDatabaseInitialized(true);
       const response = await api.getProperties({
         sortBy,
         sortOrder,
@@ -73,7 +67,13 @@ export default function AdminPage() {
       });
       setProperties(response.properties);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка при загрузке объектов');
+      const errorMessage = err instanceof Error ? err.message : 'Ошибка при загрузке объектов';
+      setError(errorMessage);
+      
+      // Check if database is not initialized
+      if (errorMessage.includes('Database not initialized') || errorMessage.includes('doesn\'t exist')) {
+        setIsDatabaseInitialized(false);
+      }
     } finally {
       setLoading(false);
     }
@@ -89,7 +89,7 @@ export default function AdminPage() {
     try {
       const response = await api.checkAuth();
       setIsAuthenticated(response.isAuthenticated);
-    } catch (error: any) {
+    } catch {
       setIsAuthenticated(false);
     }
   };
@@ -120,30 +120,36 @@ export default function AdminPage() {
     }
   };
 
+  const handleInitDatabase = async () => {
+    try {
+      setIsInitializing(true);
+      setError(null);
+      await api.initDatabase();
+      setIsDatabaseInitialized(true);
+      // Reload properties after initialization
+      await fetchProperties();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка при инициализации базы данных');
+    } finally {
+      setIsInitializing(false);
+    }
+  };
+
   const handleCreateProperty = () => {
     setEditingProperty(null);
     setPropertyForm({
       title: '',
       description: '',
       shortDescription: '',
-      price: 0,
-      area: 0,
+      price: '',
+      area: '',
       location: '',
       address: '',
       coordinates: [55.7558, 37.6176],
       type: 'Жилые помещения',
       transactionType: 'Продажа',
-      investmentReturn: 0,
+      investmentReturn: '',
       images: [],
-      layout: '',
-      specifications: {
-        rooms: 0,
-        bathrooms: 0,
-        parking: false,
-        balcony: false,
-        elevator: false,
-        furnished: false,
-      }
     });
     setShowPropertyModal(true);
   };
@@ -161,17 +167,8 @@ export default function AdminPage() {
       coordinates: property.coordinates,
       type: property.type,
       transactionType: property.transactionType,
-      investmentReturn: property.investmentReturn || 0,
+      investmentReturn: property.investmentReturn || '',
       images: property.images,
-      layout: property.layout || '',
-      specifications: {
-        rooms: property.specifications.rooms ?? 0,
-        bathrooms: property.specifications.bathrooms ?? 0,
-        parking: property.specifications.parking ?? false,
-        balcony: property.specifications.balcony ?? false,
-        elevator: property.specifications.elevator ?? false,
-        furnished: property.specifications.furnished ?? false,
-      }
     });
     setShowPropertyModal(true);
   };
@@ -180,10 +177,18 @@ export default function AdminPage() {
     e.preventDefault();
     setIsSaving(true);
     try {
+      // Преобразуем пустые строки в числа перед отправкой
+      const dataToSave = {
+        ...propertyForm,
+        price: typeof propertyForm.price === 'string' ? (propertyForm.price === '' ? 0 : Number(propertyForm.price)) : propertyForm.price,
+        area: typeof propertyForm.area === 'string' ? (propertyForm.area === '' ? 0 : Number(propertyForm.area)) : propertyForm.area,
+        investmentReturn: typeof propertyForm.investmentReturn === 'string' ? (propertyForm.investmentReturn === '' ? 0 : Number(propertyForm.investmentReturn)) : propertyForm.investmentReturn,
+      };
+      
       if (editingProperty) {
-        await api.updateProperty(editingProperty._id, propertyForm);
+        await api.updateProperty(editingProperty._id, dataToSave);
       } else {
-        await api.createProperty(propertyForm);
+        await api.createProperty(dataToSave);
       }
       setShowPropertyModal(false);
       fetchProperties();
@@ -378,6 +383,37 @@ export default function AdminPage() {
             <div className="p-8 text-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
               <p className="text-gray-600 mt-2">Загрузка...</p>
+            </div>
+          ) : !isDatabaseInitialized ? (
+            <div className="p-8 text-center">
+              <div className="max-w-md mx-auto">
+                <div className="mb-4">
+                  <Building2 className="h-12 w-12 text-gray-400 mx-auto" />
+                </div>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  База данных не инициализирована
+                </h3>
+                <p className="text-gray-600 mb-6">
+                  Необходимо создать таблицы в базе данных перед использованием панели администратора.
+                </p>
+                <button
+                  onClick={handleInitDatabase}
+                  disabled={isInitializing}
+                  className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center space-x-2 mx-auto"
+                >
+                  {isInitializing ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <span>Инициализация...</span>
+                    </>
+                  ) : (
+                    <span>Инициализировать базу данных</span>
+                  )}
+                </button>
+                {error && (
+                  <p className="text-red-600 mt-4 text-sm">{error}</p>
+                )}
+              </div>
             </div>
           ) : error ? (
             <div className="p-8 text-center">
@@ -577,8 +613,9 @@ export default function AdminPage() {
                     required
                     min="0"
                     value={propertyForm.price}
-                    onChange={(e) => setPropertyForm(prev => ({ ...prev, price: Number(e.target.value) }))}
+                    onChange={(e) => setPropertyForm(prev => ({ ...prev, price: e.target.value === '' ? '' : Number(e.target.value) }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Например, 5000000"
                   />
                 </div>
 
@@ -591,8 +628,9 @@ export default function AdminPage() {
                     required
                     min="0"
                     value={propertyForm.area}
-                    onChange={(e) => setPropertyForm(prev => ({ ...prev, area: Number(e.target.value) }))}
+                    onChange={(e) => setPropertyForm(prev => ({ ...prev, area: e.target.value === '' ? '' : Number(e.target.value) }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Например, 50"
                   />
                 </div>
 
@@ -619,8 +657,9 @@ export default function AdminPage() {
                     type="number"
                     min="0"
                     max="100"
+                    step="0.01"
                     value={propertyForm.investmentReturn}
-                    onChange={(e) => setPropertyForm(prev => ({ ...prev, investmentReturn: Number(e.target.value) }))}
+                    onChange={(e) => setPropertyForm(prev => ({ ...prev, investmentReturn: e.target.value === '' ? '' : Number(e.target.value) }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     placeholder="Например, 15"
                   />

@@ -195,13 +195,21 @@ class ApiClient {
   async checkAuth(): Promise<{ message: string; isAuthenticated: boolean }> {
     try {
       return await this.request<{ message: string; isAuthenticated: boolean }>('/auth/check');
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Если это не ошибка сервера (500), а просто отсутствие сессии, возвращаем isAuthenticated: false
-      if (error?.message?.includes('No session') || error?.message?.includes('Invalid or expired')) {
-        return { message: error.message, isAuthenticated: false };
+      const err = error as { message?: string };
+      if (err?.message?.includes('No session') || err?.message?.includes('Invalid or expired')) {
+        return { message: err.message || 'Authentication error', isAuthenticated: false };
       }
       throw error;
     }
+  }
+
+  // Admin API
+  async initDatabase(): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/admin/init', {
+      method: 'POST',
+    });
   }
 }
 

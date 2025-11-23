@@ -2,6 +2,69 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '@/lib/db';
 import { requireAuth } from '@/lib/auth';
 
+// Helper function to safely parse images field
+function parseImages(images: string | string[]): string[] {
+  // If already an array, return as is
+  if (Array.isArray(images)) {
+    return images;
+  }
+  
+  // If empty string, return empty array
+  if (!images || images.trim() === '') {
+    return [];
+  }
+  
+  // Try to parse as JSON
+  try {
+    const parsed = JSON.parse(images);
+    if (Array.isArray(parsed)) {
+      return parsed;
+    }
+    // If parsed but not an array, wrap in array
+    return [String(images)];
+  } catch {
+    // If parsing fails, check if it's a data URI
+    if (typeof images === 'string' && images.startsWith('data:')) {
+      return [images];
+    }
+    // Otherwise, wrap in array
+    return [String(images)];
+  }
+}
+
+interface PropertyDBRow {
+  id: string;
+  title: string;
+  description: string;
+  shortDescription: string;
+  price: string | number;
+  area: string | number;
+  location: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  type: string;
+  transactionType: string;
+  investmentReturn: string | number | null;
+  images: string;
+  isFeatured: number | boolean;
+  layout: string | null;
+  rooms: number | null;
+  bathrooms: number | null;
+  parking: number | boolean;
+  balcony: number | boolean;
+  elevator: number | boolean;
+  furnished: number | boolean;
+  views: number;
+  submissions: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface FeaturedRow {
+  isFeatured: number | boolean;
+}
+
 // PATCH /api/properties/[id]/featured - Toggle featured status
 export async function PATCH(
   request: NextRequest,
@@ -16,7 +79,7 @@ export async function PATCH(
     const [rows] = await pool.execute(
       'SELECT isFeatured FROM properties WHERE id = ?',
       [id]
-    ) as any[];
+    ) as [FeaturedRow[], unknown];
 
     if (rows.length === 0) {
       return NextResponse.json(
@@ -35,7 +98,7 @@ export async function PATCH(
     const [updatedRows] = await pool.execute(
       'SELECT * FROM properties WHERE id = ?',
       [id]
-    ) as any[];
+    ) as [PropertyDBRow[], unknown];
 
     const property = updatedRows[0];
     return NextResponse.json({
@@ -43,15 +106,15 @@ export async function PATCH(
       title: property.title,
       description: property.description,
       shortDescription: property.shortDescription,
-      price: parseFloat(property.price),
-      area: parseFloat(property.area),
+      price: parseFloat(String(property.price)),
+      area: parseFloat(String(property.area)),
       location: property.location,
       address: property.address,
-      coordinates: [parseFloat(property.latitude), parseFloat(property.longitude)],
+      coordinates: [parseFloat(String(property.latitude)), parseFloat(String(property.longitude))],
       type: property.type,
       transactionType: property.transactionType,
-      investmentReturn: property.investmentReturn ? parseFloat(property.investmentReturn) : undefined,
-      images: JSON.parse(property.images),
+      investmentReturn: property.investmentReturn ? parseFloat(String(property.investmentReturn)) : undefined,
+      images: parseImages(property.images),
       isFeatured: Boolean(property.isFeatured),
       layout: property.layout || undefined,
       specifications: {
@@ -67,19 +130,21 @@ export async function PATCH(
       createdAt: property.created_at.toISOString(),
       updatedAt: property.updated_at.toISOString(),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Toggle featured error:', error);
     
+    const err = error as { message?: string };
+    
     // Обрабатываем ошибки авторизации
-    if (error?.message?.includes('Unauthorized')) {
+    if (err?.message?.includes('Unauthorized')) {
       return NextResponse.json(
-        { message: error.message },
+        { message: err.message },
         { status: 401 }
       );
     }
     
     return NextResponse.json(
-      { message: 'Server error', error: error?.message || String(error) },
+      { message: 'Server error', error: err?.message || String(error) },
       { status: 500 }
     );
   }

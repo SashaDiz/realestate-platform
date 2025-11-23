@@ -1,9 +1,11 @@
 services:
-  # MySQL Database
+  # MySQL Database (local - only used if DB_HOST is not set in .env)
+  # To use external database (e.g., Timeweb Cloud), set DB_HOST in .env file
   mysql:
     image: mysql:8.0
     container_name: real-estate-mysql
     restart: unless-stopped
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
       MYSQL_DATABASE: ${DB_NAME}
@@ -12,11 +14,11 @@ services:
     networks:
       - app-network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "--silent"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 40s
 
   # Application (Next.js Full-Stack App)
   app:
@@ -30,11 +32,20 @@ services:
     environment:
       NODE_ENV: production
       # Database
-      DB_HOST: mysql
-      DB_PORT: 3306
+      # Set DB_HOST in .env to use external database (e.g., Timeweb Cloud IP: 193.160.209.34)
+      # Leave unset or set to 'mysql' to use local MySQL container
+      DB_HOST: ${DB_HOST:-mysql}
+      DB_PORT: ${DB_PORT:-3306}
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
+      # SSL Configuration (for external databases like Timeweb Cloud)
+      # Set DB_SSL_CA_PATH to path to certificate file (e.g., /app/ca.crt)
+      DB_SSL_CA_PATH: ${DB_SSL_CA_PATH:-}
+      # Set ALLOW_SELF_SIGNED_CERT=true for development (not recommended for production)
+      ALLOW_SELF_SIGNED_CERT: ${ALLOW_SELF_SIGNED_CERT:-false}
+      # Authentication
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       # S3 Storage
       S3_ENDPOINT: ${S3_ENDPOINT}
       S3_BUCKET_NAME: ${S3_BUCKET_NAME}
@@ -45,6 +56,10 @@ services:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
       NEXT_PUBLIC_SITE_NAME: ${NEXT_PUBLIC_SITE_NAME}
       NEXT_PUBLIC_SITE_DESCRIPTION: ${NEXT_PUBLIC_SITE_DESCRIPTION}
+    volumes:
+      # Mount SSL certificate for Timeweb Cloud database
+      # Certificate is downloaded from https://st.timeweb.com/cloud-static/ca.crt
+      - ./ca.crt:/app/ca.crt:ro
     depends_on:
       mysql:
         condition: service_healthy

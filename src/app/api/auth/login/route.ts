@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyPassword, createSession } from '@/lib/auth';
+import { createSession, verifyPassword } from '@/lib/auth';
 
 // POST /api/auth/login
 export async function POST(request: NextRequest) {
@@ -14,49 +14,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Простая проверка пароля из переменных окружения
+    // Проверка ТОЛЬКО пароля из переменных окружения
+    // Имя пользователя НЕ используется - вход только по паролю!
+    // ВАЖНО: Перезапустите сервер после изменения .env файла!
     const adminPassword = (process.env.ADMIN_PASSWORD || '').trim();
-    
-    // Логируем для отладки (безопасно - только первые символы для проверки)
-    console.log('Login attempt:', {
-      receivedPasswordLength: password?.length || 0,
-      receivedPasswordPrefix: password?.substring(0, 5) || '',
-      expectedPasswordLength: adminPassword?.length || 0,
-      expectedPasswordPrefix: adminPassword?.substring(0, 5) || '',
-      adminPasswordSet: !!adminPassword,
-      envKeys: Object.keys(process.env).filter(k => k.includes('ADMIN')).join(', '),
-    });
     
     if (!adminPassword) {
       console.error('ADMIN_PASSWORD is not set in environment variables');
+      console.error('Available env vars:', Object.keys(process.env).filter(k => k.includes('ADMIN')).join(', '));
       return NextResponse.json(
         { message: 'Server configuration error: ADMIN_PASSWORD not set' },
         { status: 500 }
       );
     }
     
-    // Сравниваем пароли напрямую (безопасное сравнение)
-    // Используем сравнение по длине и посимвольно для избежания timing attacks
-    if (password.length !== adminPassword.length) {
-      console.log('Password length mismatch');
-      return NextResponse.json(
-        { message: 'Invalid credentials' },
-        { status: 401 }
-      );
-    }
+    // Детальное логирование для отладки
+    const trimmedPassword = (password || '').trim();
+    console.log('Login attempt:', {
+      receivedPasswordLength: password?.length || 0,
+      trimmedPasswordLength: trimmedPassword.length,
+      expectedPasswordLength: adminPassword.length,
+      receivedPasswordPrefix: password?.substring(0, 5) || '',
+      trimmedPasswordPrefix: trimmedPassword.substring(0, 5),
+      expectedPasswordPrefix: adminPassword.substring(0, 5),
+      passwordsMatch: trimmedPassword === adminPassword,
+      adminPasswordSet: !!adminPassword,
+      envSource: process.env.ADMIN_PASSWORD ? 'process.env' : 'NOT FOUND',
+    });
     
-    // Постоянное время сравнения
-    let match = true;
-    for (let i = 0; i < password.length; i++) {
-      if (password[i] !== adminPassword[i]) {
-        match = false;
-      }
-    }
+    // Проверяем пароль используя функцию verifyPassword
+    const isValid = verifyPassword(password);
     
-    if (!match) {
-      console.log('Password mismatch');
+    if (!isValid) {
+      console.log('Password verification failed');
       return NextResponse.json(
-        { message: 'Invalid credentials' },
+        { message: 'Invalid password' },
         { status: 401 }
       );
     }

@@ -57,7 +57,9 @@ export function verifyPassword(password: string): boolean {
   if (!adminPassword) {
     return false;
   }
-  return password === adminPassword;
+  // Обрезаем пробелы с обеих сторон для сравнения
+  const trimmedPassword = (password || '').trim();
+  return trimmedPassword === adminPassword;
 }
 
 // Получаем сессию из cookies
