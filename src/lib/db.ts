@@ -75,49 +75,73 @@ const getSSLConfig = () => {
   return undefined;
 };
 
-// Валидация конфигурации при загрузке модуля
-try {
-  validateDbConfig();
-} catch (error) {
-  console.error('Database configuration error:', error instanceof Error ? error.message : error);
-}
+// Ленивая инициализация пула соединений
+// Pool создается только при первом обращении, а не при импорте модуля
+// Это позволяет Next.js собирать приложение без подключения к БД
+let pool: mysql.Pool | null = null;
 
-const sslConfig = getSSLConfig();
-
-const pool = mysql.createPool({
-  host: process.env.DB_HOST,
-  port: parseInt(process.env.DB_PORT || '3306'),
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-  charset: 'utf8mb4',
-  connectTimeout: 10000, // 10 seconds timeout for connection attempts
-  ...(sslConfig && { ssl: sslConfig }),
-});
-
-// Обработка ошибок пула соединений
-// Примечание: pool.on('error') не поддерживается в promise API
-// Ошибки обрабатываются при попытке получения соединения через try/catch
-pool.on('connection', (connection) => {
-  console.log('New MySQL connection established');
-  
-  connection.on('error', (err: Error & { code?: string; errno?: number; sqlState?: string; fatal?: boolean }) => {
-    console.error('MySQL connection error:', {
-      code: err.code,
-      errno: err.errno,
-      sqlState: err.sqlState,
-      message: err.message,
-      fatal: err.fatal,
+const getPool = () => {
+  if (!pool) {
+    // Валидация конфигурации только при реальном создании пула
+    validateDbConfig();
+    
+    const sslConfig = getSSLConfig();
+    
+    pool = mysql.createPool({
+      host: process.env.DB_HOST,
+      port: parseInt(process.env.DB_PORT || '3306'),
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+      charset: 'utf8mb4',
+      connectTimeout: 10000, // 10 seconds timeout for connection attempts
+      ...(sslConfig && { ssl: sslConfig }),
     });
     
-    if (err.fatal) {
-      console.error('Fatal connection error - connection will be closed');
+    // Обработка ошибок пула соединений
+    // Примечание: pool.on('error') не поддерживается в promise API
+    // Ошибки обрабатываются при попытке получения соединения через try/catch
+    pool.on('connection', (connection) => {
+      console.log('New MySQL connection established');
+      
+      connection.on('error', (err: Error & { code?: string; errno?: number; sqlState?: string; fatal?: boolean }) => {
+        console.error('MySQL connection error:', {
+          code: err.code,
+          errno: err.errno,
+          sqlState: err.sqlState,
+          message: err.message,
+          fatal: err.fatal,
+        });
+        
+        if (err.fatal) {
+          console.error('Fatal connection error - connection will be closed');
+        }
+      });
+    });
+  }
+  
+  return pool;
+};
+
+// Экспортируем Proxy, который делегирует все вызовы к реальному пулу
+// Это позволяет использовать pool как обычно: pool.query(), pool.execute() и т.д.
+// но реальный пул будет создан только при первом обращении
+const dbPool = new Proxy({} as mysql.Pool, {
+  get(target, prop) {
+    const actualPool = getPool();
+    const value = actualPool[prop as keyof mysql.Pool];
+    
+    // Если это функция, bind к actualPool
+    if (typeof value === 'function') {
+      return value.bind(actualPool);
     }
-  });
+    
+    return value;
+  }
 });
 
-export default pool;
+export default dbPool;
 

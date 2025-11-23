@@ -1,18 +1,27 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-// Initialize S3 client
-const s3Client = new S3Client({
-  region: process.env.S3_REGION || 'ru-1',
-  endpoint: process.env.S3_ENDPOINT || 'https://s3.twcstorage.ru',
-  credentials: {
-    accessKeyId: process.env.S3_ACCESS_KEY || '',
-    secretAccessKey: process.env.S3_SECRET_KEY || '',
-  },
-  forcePathStyle: true, // Required for some S3-compatible services
-});
+// Ленивая инициализация S3 клиента
+// Клиент создается только при первом обращении, а не при импорте модуля
+// Это позволяет Next.js собирать приложение без проблем с credentials
+let s3Client: S3Client | null = null;
 
-export const bucketName = process.env.S3_BUCKET_NAME || '';
+const getS3Client = () => {
+  if (!s3Client) {
+    s3Client = new S3Client({
+      region: process.env.S3_REGION || 'ru-1',
+      endpoint: process.env.S3_ENDPOINT || 'https://s3.twcstorage.ru',
+      credentials: {
+        accessKeyId: process.env.S3_ACCESS_KEY || '',
+        secretAccessKey: process.env.S3_SECRET_KEY || '',
+      },
+      forcePathStyle: true, // Required for some S3-compatible services
+    });
+  }
+  return s3Client;
+};
+
+export const getBucketName = () => process.env.S3_BUCKET_NAME || '';
 
 // Upload file to S3
 export async function uploadFileToS3(
@@ -20,6 +29,8 @@ export async function uploadFileToS3(
   fileName: string,
   contentType: string = 'image/jpeg'
 ): Promise<string> {
+  const client = getS3Client();
+  const bucketName = getBucketName();
   const key = `real-estate/${Date.now()}-${fileName}`;
   
   const command = new PutObjectCommand({
@@ -31,7 +42,7 @@ export async function uploadFileToS3(
   });
 
   try {
-    await s3Client.send(command);
+    await client.send(command);
     // Return the public URL
     return `${process.env.S3_ENDPOINT}/${bucketName}/${key}`;
   } catch (error) {
@@ -42,6 +53,9 @@ export async function uploadFileToS3(
 
 // Delete file from S3
 export async function deleteFileFromS3(fileUrl: string): Promise<void> {
+  const client = getS3Client();
+  const bucketName = getBucketName();
+  
   try {
     // Extract key from URL
     const urlParts = fileUrl.split('/');
@@ -52,7 +66,7 @@ export async function deleteFileFromS3(fileUrl: string): Promise<void> {
       Key: key,
     });
 
-    await s3Client.send(command);
+    await client.send(command);
   } catch (error) {
     console.error('Error deleting from S3:', error);
     throw new Error('Failed to delete file from S3');
@@ -64,6 +78,8 @@ export async function generatePresignedUploadUrl(
   fileName: string,
   contentType: string = 'image/jpeg'
 ): Promise<{ uploadUrl: string; fileUrl: string }> {
+  const client = getS3Client();
+  const bucketName = getBucketName();
   const key = `real-estate/${Date.now()}-${fileName}`;
   
   const command = new PutObjectCommand({
@@ -74,7 +90,7 @@ export async function generatePresignedUploadUrl(
   });
 
   try {
-    const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 }); // 1 hour
+    const uploadUrl = await getSignedUrl(client, command, { expiresIn: 3600 }); // 1 hour
     const fileUrl = `${process.env.S3_ENDPOINT}/${bucketName}/${key}`;
     
     return { uploadUrl, fileUrl };
