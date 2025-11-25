@@ -55,9 +55,13 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 RUN wget -q https://st.timeweb.com/cloud-static/ca.crt -O /app/ca.crt 2>/dev/null || echo "SSL cert will be handled at runtime"
 RUN chown nextjs:nodejs /app/ca.crt 2>/dev/null || true
 
+# Copy and setup startup script
+COPY --chown=nextjs:nodejs startup.sh ./
+RUN chmod +x startup.sh
+
 USER nextjs
 
 EXPOSE 3000
 
-# Start the application
-CMD ["node", "server.js"]
+# Start the application using startup script
+CMD ["./startup.sh"]
