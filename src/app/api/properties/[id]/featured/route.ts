@@ -68,12 +68,12 @@ interface FeaturedRow {
 // PATCH /api/properties/[id]/featured - Toggle featured status
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAuth();
 
-    const { id } = params;
+    const { id } = await params;
 
     // Get current featured status
     const [rows] = await pool.execute(

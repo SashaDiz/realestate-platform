@@ -4,10 +4,10 @@ import pool from '@/lib/db';
 // POST /api/properties/[id]/submit - Increment submission count
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     await pool.execute(
       'UPDATE properties SET submissions = submissions + 1 WHERE id = ?',

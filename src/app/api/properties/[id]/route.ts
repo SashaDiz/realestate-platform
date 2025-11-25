@@ -64,10 +64,10 @@ interface PropertyDBRow {
 // GET /api/properties/[id] - Get single property
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     const [rows] = await pool.execute(
       'SELECT * FROM properties WHERE id = ?',
@@ -156,12 +156,12 @@ export async function GET(
 // PUT /api/properties/[id] - Update property (admin only)
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAuth();
 
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
     const {
       title,
@@ -349,12 +349,12 @@ export async function PUT(
 // DELETE /api/properties/[id] - Delete property (admin only)
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAuth();
 
-    const { id } = params;
+    const { id } = await params;
 
     interface DeleteResult {
       affectedRows: number;
